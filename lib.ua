@@ -1,234 +1,334 @@
 # Experimental!
 
-GetLibraryPath ↚ (
-  ≍"windows"Os
-  ⨬("bin/sqlite3.so"
-  | ⊗□Arch{"x86" "x86_64"}
-    ⨬("win32.dll"|"win64.dll"|0⍤"Unsupported architecture"0)
-    ⊂"bin/sqlite3_"
-  )
-  /($"___" ⊙Sep) {"." ThisFileDir ∘}
-)
-
-Lib  ← &ffi ⊂□GetLibraryPath
-Call ← Lib ⊂⊟∩□
+┌─╴FFI ~ Call Lib
+  LibPath ← "/lib/libsqlite3.so"
+  # result ? function params
+  Lib ← &ffi ⊂□LibPath
+  # result ? return-type name param-types params
+  Call ← Lib ⊂□₂
+  
+  P ← $"_*"
+  C ← $"const _"
+  
+  𝕔 ← "char"
+  ℝ ← "double"
+  ℤ ← "int"
+  𝕧 ← "void"
+└─╴
 
 SqliteOk   ← 0
 SqliteRow  ← 100
 SqliteDone ← 101
 
-SqliteInteger ← 1
-SqliteFloat   ← 2
-SqliteText    ← 3
-SqliteBlob    ← 4
-SqliteNull    ← 5
-
-Statement        ← {$STMT ⊙($DB) ⊙∘}
-GetStatementStmt ← °□⊡0
-GetStatementDb   ← °□⊡1
-
-InferredTypeNull  ← $NULL 0
-InferredTypeInt   ← $INT 1
-InferredTypeFloat ← $FLOAT 2
-InferredTypeText  ← $TEXT 3
-InferredTypeBlob  ← $BLOB 4
+~Statement {Stmt DB}
 
 IsNull  ← ≍NaN
-IsInt   ← ⨬(0|≍⁅.)/↧[⊃(=0type|≍[]△)].
-IsFloat ← ⨬(0|¬≍⁅.)/↧[⊃(=0type|≍[]△)].
-IsText  ← /↧[⊃(=2type|=1⧻△)]
-IsBlob  ← ⨬(0|/↧≤255)/↧[⊃(=0type|=1⧻△)].
+IsInt   ← ⨬(0|≍⊸⁅)↧⊸⊃(=0type|≍[]△)
+IsFloat ← ⨬(0|¬≍⊸⁅)↧⊸⊃(=0type|≍[]△)
+IsText  ← ↧⊃(=2type|=1⧻△)
+IsBlob  ← ⨬(0|/↧≤255)↧⊸⊃(=0type|=1⧻△)
 
-InferType ← (
-  ⍣(⊢⊚[⊃(IsNull|IsInt|IsFloat|IsText|IsBlob)]|0⍤."Invalid value"◌)
-  ⊡:[InferredTypeNull InferredTypeInt InferredTypeFloat InferredTypeText InferredTypeBlob]
-)
+InferType ← ⍣(
+  ⊢⊚[⊃(IsNull|IsInt|IsFloat|IsText|IsBlob)]
+| ⍤."Invalid value"◌)
 
 # https://www.sqlite.org/c3ref/errcode.html
-Err ← (
-  {∘}
-  Lib {"const char*" "sqlite3_errmsg" "const int*"}
-)
+Err ← Lib FFI!{C P 𝕔 "sqlite3_errmsg" C P ℤ} □₁
+
+Err! ← ⨬(⍤.^0 Err|◌)≍SqliteOk
 
 # https://www.sqlite.org/c3ref/open.html
-Open ← (
-  {⊙0}
-  Call "int" "sqlite3_open" {"const char*" "void**"}
-  °{⊙∘}
-  ⍤ $"Failed to open database: _" ⟜(≍SqliteOk)
-  $DB
+Open ← FFI!(
+  ⍜□₂(Call ℤ "sqlite3_open" {C P 𝕔 P P 𝕧}) ⊙0
+  ⍤$"Failed to open database: _"⤙≍SqliteOk
 )
 
 # https://www.sqlite.org/c3ref/close.html
-Close ← (
-  ⟜({∘}
-    Call "int" "sqlite3_close" {"const void*"}
-  )
-  ⨬(⍤.$"Failed to close database: _" Err|◌)≍SqliteOk:
+Close ← FFI!(
+  Call ℤ "sqlite3_close" {C P 𝕧} □₁ .
+  Err!$"Failed to close database: _"
+)
+
+# Should be used like `⍜Connection⟜F`.
+# Inside F, you have access to the database
+# pointer. `⟜` ensures that the pointer
+# ends up on top of the stack to close
+# the connection.
+Connection ← ⌅(Open|Close)
+
+DB! ←^ (
+  ◇⊸⍜⊢⌵⊢
+  $$ ┌─╴_
+  $$   ! ← ⍜Uiqlite~Connection⟜^0 "_"
+  $$ └─╴
 )
 
 # https://www.sqlite.org/c3ref/exec.html
-Exec ← (
-  {⊙⊙(0 0 "www")}:
-  Call "int" "sqlite3_exec" {"const void*" "const char*" "const void*" "const void*" "const char**"}
-  °{⊙∘}
-  ⨬(⍤.$"Failed to exec: _"|◌)≍SqliteOk
+Exec ← FFI!(
+  □₅ ⊓:(0 0 "www")
+  Call ℤ "sqlite3_exec" {C P 𝕧 C P 𝕔 C P 𝕧 C P 𝕧 C P P 𝕔}
+  ⨬(⍤.$"Failed to exec: _"|◌)≍SqliteOk °□₂
 )
 
 # https://www.sqlite.org/c3ref/prepare.html
-Prepare ← (
-  ⊃({⊙⊙(¯1 0 0)}:
-    Call "int" "sqlite3_prepare_v2" {"const void*" "const char*" "int" "void**" "const char**"}
-    °{⊙∘}↘¯1
-  )(.⋅∘)
-  ⨬(⍤.$"Failed to prepare statement: _" Err:|⊙◌)≍SqliteOk
+# prepared ? str db*
+Prepare ← FFI!(
+  □₅⊃⊓:(¯1 0 0)⋅⟜∘
+  Call ℤ "sqlite3_prepare_v2" {C P 𝕧 C P 𝕔 ℤ P P 𝕧 C P P 𝕔}
+  ⨬(⍤.$"Failed to prepare statement: _" Err:|⊙◌)≍SqliteOk ∩°□⊢₂
   Statement
 )
 
 # https://www.sqlite.org/c3ref/bind_blob.html
-BindBlob ← (
+BindBlob ← FFI!(
   # TODO: This doesn't work, no idea why
-  {⊙⊙⊙⊙∘} ⊃(⋅⋅GetStatementStmt|∘|⋅∘|⧻⋅∘|NULL|⋅⋅GetStatementDb)
-  Call "int" "sqlite3_bind_blob" {"const void*" "const int" "const int*" "const int" "const void*"}
-  ⨬(⍤.$"Failed to bind blob: _" Err|◌)≍SqliteOk
+  □₅ ⊃(⋅⋅Statement~Stmt|⊙∘|⋅⧻|NULL|⋅⋅Statement~DB)
+  Call ℤ "sqlite3_bind_blob" {C P 𝕧 C ℤ C P ℤ C ℤ C P 𝕧}
+  Err!$"Failed to bind blob: _"
 )
 
-BindInt ← (
-  {⊙⊙∘} ⊃(⋅⋅GetStatementStmt|⊙∘|⋅⋅GetStatementDb)
-  Call "int" "sqlite3_bind_int" {"const void*" "const int" "const int"}
-  ⨬(⍤.$"Failed to bind integer: _" Err|◌)≍SqliteOk
+BindInt ← FFI!(
+  □₃ ⊃(⋅⋅Statement~Stmt|⊙⊙Statement~DB)
+  Call ℤ "sqlite3_bind_int" {C P 𝕧 C ℤ C ℤ}
+  Err!$"Failed to bind integer: _"
 )
 
-BindFloat ← (
-  {⊙⊙∘} ⊃(⋅⋅GetStatementStmt|⊙∘|⋅⋅GetStatementDb)
-  Call "int" "sqlite3_bind_double" {"const void*" "const int" "const double"}
-  ⨬(⍤.$"Failed to bind float: _" Err|◌)≍SqliteOk
+BindFloat ← FFI!(
+  □₃ ⊃(⋅⋅Statement~Stmt|⊙⊙Statement~DB)
+  Call ℤ "sqlite3_bind_double" {C P 𝕧 C ℤ C ℝ}
+  Err!$"Failed to bind float: _"
 )
 
-BindNull ← (
-  {⊙∘} ⊃(⋅GetStatementStmt|∘|⋅GetStatementDb)
-  Call "int" "sqlite3_bind_null" {"const void*" "const int"}
-  ⨬(⍤.$"Failed to bind float: _" Err|◌)≍SqliteOk
+BindNull ← FFI!(
+  □₂ ⊃(⋅Statement~Stmt|⊙Statement~DB)
+  Call ℤ "sqlite3_bind_null" {C P 𝕧 C ℤ}
+  Err!$"Failed to bind float: _"
 )
 
-BindText ← (
+BindText ← FFI!(
   # TODO: This doesn't work, no idea why
-  {⊙⊙⊙⊙∘} ⊃(⋅⋅GetStatementStmt|∘|⋅∘|¯1|NULL|⋅⋅GetStatementDb)
-  Call "int" "sqlite3_bind_text" {"const void*" "const int" "const char*" "int" "const void*"}
-  ⨬(⍤.$"Failed to bind text: _" Err|◌)≍SqliteOk
+  □₅ ⊃(⋅⋅Statement~Stmt|∘|⋅∘|¯1|NULL|⋅⋅Statement~DB)
+  Call ℤ "sqlite3_bind_text" {C P 𝕧 C ℤ C P 𝕔 ℤ C P 𝕧}
+  Err!$"Failed to bind text: _"
 )
 
 BindValue ← (
-  ⊃(⋅InferType|⊙∘)
-  ⨬(BindNull⊙◌|BindInt|BindFloat|BindText|BindBlob)
+  ◡⋅InferType
+  ⨬(𝄐BindNull
+  | BindInt
+  | BindFloat
+  | BindText
+  | BindBlob)
 )
 
-BindValues ← ⍚BindValue +1⇡⧻.⊙¤
+BindValues ← ⍚BindValue +₁⊓°⊏¤
 
 # https://www.sqlite.org/c3ref/bind_parameter_index.html"
-BindParameterIndex ← (
-  {⊙∘} ⊃(⋅GetStatementStmt|∘|$"Invalid named parameter: \"_\""∘)
-  Call "int" "sqlite3_bind_parameter_index" {"const void*" "const char*"}
-  ⍤:⊙:>0.
+BindParameterIndex ← FFI!(
+  □₂ ⊃⤚⋅Statement~Stmt$"Invalid named parameter: \"_\""
+  Call ℤ "sqlite3_bind_parameter_index" {C P 𝕧 C P 𝕔}
+  𝄐⌞˜⍤⊸>₀
 )
 
-BindNamed ← BindValue ⊃(BindParameterIndex⊙⋅∘|⋅⊙∘)
+BindNamed ← BindValue⊸₂𝄐BindParameterIndex
 
-BindNamedMap ← ⍚BindNamed °map⊙¤
+BindNamedMap ← ⍚⌟BindNamed °map
 
 # https://www.sqlite.org/c3ref/step.html
-Step ← (
-  {∘} GetStatementStmt
-  Call "int" "sqlite3_step" {"const void*"}
+Step ← FFI!(
+  □₁ Statement~Stmt
+  Call ℤ "sqlite3_step" {C P 𝕧}
 )
 
 StepRow ← ≍SqliteRow Step
 
 # https://www.sqlite.org/c3ref/column_count.html
-ColumnCount ← (
-  {∘} GetStatementStmt
-  Call "int" "sqlite3_column_count" {"const void*"}
+ColumnCount ← FFI!(
+  □₁ Statement~Stmt
+  Call ℤ "sqlite3_column_count" {C P 𝕧}
 )
 
 # https://www.sqlite.org/c3ref/column_name.html
-ColumnName ← (
-  {⊙∘} :⊙GetStatementStmt
-  Call "char*" "sqlite3_column_name" {"const void*" "const int"}
+ColumnName ← FFI!(
+  □₂⤚⋅Statement~Stmt
+  Call P 𝕔 "sqlite3_column_name" {C P 𝕧 C ℤ}
 )
 
 # https://www.sqlite.org/c3ref/column_blob.html
-ColumnType ← (
-  {⊙∘} :⊙GetStatementStmt
-  Call "int" "sqlite3_column_type" {"const void*" "const int"}
+# subtract one from the type so they start at 0,
+# which makes it easier to use a switch later.
+ColumnType ← FFI!(
+  □₂⤚⋅Statement~Stmt
+  -₁ Call ℤ "sqlite3_column_type" {C P 𝕧 C ℤ}
 )
 
 # https://www.sqlite.org/c3ref/column_blob.html
-ColumnBlob ← (
-  {⊙∘} :⊙GetStatementStmt
+ColumnBlob ← FFI!(
+  □₂⤚⋅Statement~Stmt
   # 0⍤."Returning a BLOB is currently unsupported"◌
   # TODO: This doesn't work as expected
-  Call "int*" "sqlite3_column_blob" {"const void*" "const int"}
+  Call P ℤ "sqlite3_column_blob" {C P 𝕧 C ℤ}
 )
 
 # https://www.sqlite.org/c3ref/column_blob.html
-ColumnFloat ← (
-  {⊙∘} :⊙GetStatementStmt
-  Call "double" "sqlite3_column_double" {"const void*" "const int"}
+ColumnFloat ← FFI!(
+  □₂⤚⋅Statement~Stmt
+  Call "double" "sqlite3_column_double" {C P 𝕧 C ℤ}
 )
 
 # https://www.sqlite.org/c3ref/column_blob.html
-ColumnInt ← (
-  {⊙∘} :⊙GetStatementStmt
-  Call "int" "sqlite3_column_int" {"const void*" "const int"}
+ColumnInt ← FFI!(
+  □₂⤚⋅Statement~Stmt
+  Call ℤ "sqlite3_column_int" {C P 𝕧 C ℤ}
 )
 
 # https://www.sqlite.org/c3ref/column_blob.html
-ColumnText ← (
-  {⊙∘} :⊙GetStatementStmt
-  Call "char*" "sqlite3_column_text" {"const void*" "const int"}
+ColumnText ← FFI!(
+  □₂⤚⋅Statement~Stmt
+  Call "char*" "sqlite3_column_text" {C P 𝕧 C ℤ}
 )
 
 # Helper function to automatically infer column value and return it
 ColumnValue ← (
-  ⊃(⊙∘|⊙∘)
-  ColumnType
-  ⊗: [SqliteInteger SqliteFloat SqliteText SqliteBlob SqliteNull]
-  ⨬(ColumnInt|ColumnFloat|ColumnText|ColumnBlob|NaN)
+  ◡ColumnType
+  ⨬(ColumnInt
+  | ColumnFloat
+  | ColumnText
+  | ColumnBlob
+  | NaN)
 )
 
 # https://www.sqlite.org/c3ref/finalize.html
-Finalize ← (
-  {∘} ⊃(GetStatementStmt|GetStatementDb)
-  Call "int" "sqlite3_finalize" {"const void*"}
-  ⨬(⍤.$"Failed to finalize statement: _" Err|◌)≍SqliteOk
+Finalize ← FFI!(
+  □₁ °Statement
+  Call ℤ "sqlite3_finalize" {C P 𝕧}
+  Err!$"Failed to finalize statement: _"
 )
 
 ExecuteInsert ← (
-  Step ⊃(∘|GetStatementDb|∘)
+  Step⟜⊸Statement~DB
   ⨬(⍤.$"Failed to execute insert statement: _" Err|◌)≍SqliteDone
   Finalize
 )
 
-GetColumnNames ← (
-  ⊙¤⇡ColumnCount.
-  ≡(□ColumnName)
-)
+ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
 
-QueryValuesInternal ↚ (
-  ⟜(⊙[] ⇡ColumnCount)
-  ⍢(⟜(:¤⊙.
-      ≡(□ColumnValue)
-      :⊂⊃(⋅⋅∘|¤⊙∘)
-    )
-  )StepRow
-  ◌◌
-)
-
-QueryValues ← ⊙Finalize QueryValuesInternal.
-
-QueryMap ← (
-  ⟜(QueryValuesInternal)
-  ⟜(¤GetColumnNames)
-  Finalize
-  ≡(□map)
-)
+┌─╴Query
+  QInternal ↚ (
+    ⟜(⊙[] ⇡ColumnCount)
+    ⋅◌⍢⟜(:⊂⤙⊓¤⊙◌ ⍚⌟ColumnValue⤙∘)StepRow
+  )
+  
+  Values ← Finalize⟜QInternal
+  
+  Map ← map ⊙⍉ Finalize⟜⊃ColumnNames QInternal
+  
+  Replace ↚ ⍜⊜∘⊞⋅∘𝄐⌟⊸⦷
+  RMap ↚ °⊟⍉[
+    {@→ "as"}
+    {@~ @.}
+    {@’ @'}
+    {@≥ ">="}
+    {@≤ "<="}
+    {@≠ "!="}
+    {@⍏ "asc"}
+    {@⍖ "desc"}
+    {@⧻ "count"}
+    {"/+" "sum"}
+    {"÷⊃⧻/+" "avg"}
+    {@↧ "min"}
+    {@↥ "max"}
+    {@∘ "(*)"}
+    {@₀ @0}
+    {@₁ @1}
+    {@₂ @2}
+    {@₃ @3}
+    {@₄ @4}
+    {@₅ @5}
+    {@₆ @6}
+    {@₇ @7}
+    {@₈ @8}
+    {@₉ @9}
+  ]
+  San ↚ ∧◇Replace RMap
+  
+  JTMap ↚ °⊟⍉[
+    {"⬚⊂" "full join"}
+    {"⊞⊂" "cross join"}
+    {"⊣⊂" "left join"}
+    {"⊢⊂" "right join"}
+    {"⊂" "inner join"}
+  ]
+  JType ↚ °□⊡⊗⊓□⊓JTMap
+  
+  # joined ? join statement-accumulator
+  JoinInternal ↚ (
+    °$"_ _ _"
+    ⊓JType⊃∩San$"⊢▽⊸∊ _~Fields _~Fields"
+    :⊙⟜₂$$ °□₂ ⍚⌟$"\_.\_" {"_" "_"} _
+    ˜⊂$$ "_" "_" "_" _
+      $$ $$ from \_
+      $$ $$ \_ \_
+      $$ $$ on \_ = \_
+      $$ 
+  )
+  
+  # from ? table statement-accumulator
+  FromInternal ↚ (
+    ˜⊂$$ ˜$"from \_" "_"
+      $$ 
+  )°$"⊡ _"
+  
+  # selection ? columns statement-accumulator
+  SelectInternal ↚ (
+    ˜⊂$$ $"select \_\n\_" "_"
+      $$ 
+  )°$"⊏ _"
+  
+  # filtered ? condition statement-accumulator
+  WhereInternal ↚ (
+    ˜⊂$$ ˜$"\_\nwhere \_" "_"
+      $$ 
+  )°$"⊚ _"
+  
+  # grouped ? criteria statement-accumulator
+  GroupInternal ↚ (
+    ˜⊂$$ ˜$"\_\ngroup by \_" "_"
+      $$ 
+  )°$"⊕⊸_"
+  
+  # filtered-grouped ? condition statement-accumulator
+  HavingInternal ↚ (
+    ˜⊂$$ ˜$"\_\nhaving \_" "_"
+      $$ 
+  )°$"▽ _"
+  
+  # sorted ? criteria statement-accumulator
+  OrderInternal ↚ (
+    ˜⊂$$ ˜$"\_\norder by \_" "_"
+      $$ 
+  )°$"⍆ _"
+  
+  # limited ? count statement-accumulator
+  LimitInternal ↚ (
+    ˜⊂$$ ˜$"\_\nlimit \_" "_"
+      $$ 
+  )°$"↙ _"
+  
+  IdentifyStep ↚ ⊗⊓⊢"⊡⊂⊞⊢⊣⬚⊏⊚⊕▽⍆↙"
+  
+  ! ←^ ˜⊂"\n˜⊂@;" ∧◇⨬(
+    FromInternal
+  | JoinInternal
+  | JoinInternal
+  | JoinInternal
+  | JoinInternal
+  | JoinInternal
+  | SelectInternal
+  | WhereInternal
+  | GroupInternal
+  | HavingInternal
+  | OrderInternal
+  | LimitInternal
+  )⊸≡◇IdentifyStep ⊙"" ⍚San
+└─╴
