@@ -56,6 +56,10 @@ Close ← FFI!(
 # the connection.
 Connection ← ⌅(Open|Close)
 
+# creates a new data def containing a macro "!"
+# which executes a function inside a database
+# connection to a database named like whatever
+# is given to the macro. need to improve this a little
 DB! ←^ (
   ◇⊸⍜⊢⌵⊢
   $$ ┌─╴_
@@ -173,7 +177,7 @@ ColumnBlob ← FFI!(
 # https://www.sqlite.org/c3ref/column_blob.html
 ColumnFloat ← FFI!(
   □₂⤚⋅Statement~Stmt
-  Call "double" "sqlite3_column_double" {C P 𝕧 C ℤ}
+  Call ℝ "sqlite3_column_double" {C P 𝕧 C ℤ}
 )
 
 # https://www.sqlite.org/c3ref/column_blob.html
@@ -185,7 +189,7 @@ ColumnInt ← FFI!(
 # https://www.sqlite.org/c3ref/column_blob.html
 ColumnText ← FFI!(
   □₂⤚⋅Statement~Stmt
-  Call "char*" "sqlite3_column_text" {C P 𝕧 C ℤ}
+  Call P 𝕔 "sqlite3_column_text" {C P 𝕧 C ℤ}
 )
 
 # Helper function to automatically infer column value and return it
@@ -234,8 +238,8 @@ ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
     {@⍏ "asc"}
     {@⍖ "desc"}
     {@⧻ "count"}
-    {"/+" "sum"}
     {"÷⊃⧻/+" "avg"}
+    {"/+" "sum"}
     {@↧ "min"}
     {@↥ "max"}
     {@∘ "(*)"}
@@ -259,65 +263,59 @@ ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
     {"⊢⊂" "right join"}
     {"⊂" "inner join"}
   ]
-  JType ↚ °□⊡⊗⊓□⊓JTMap
+  JType ↚ °□⊡⊗⊓□JTMap
+  
+  Concat ← $"_\n_"
   
   # joined ? join statement-accumulator
   JoinInternal ↚ (
     °$"_ _ _"
     ⊓JType⊃∩San$"⊢▽⊸∊ _~Fields _~Fields"
     :⊙⟜₂$$ °□₂ ⍚⌟$"\_.\_" {"_" "_"} _
-    ˜⊂$$ "_" "_" "_" _
-      $$ $$ from \_
-      $$ $$ \_ \_
-      $$ $$ on \_ = \_
-      $$ 
+    ˜Concat$$ "_" "_" "_" _
+           $$ $$ from \_
+           $$ $$ \_ \_
+           $$ $$ on \_ = \_
   )
   
   # from ? table statement-accumulator
   FromInternal ↚ (
-    ˜⊂$$ ˜$"from \_" "_"
-      $$ 
+    ˜Concat$$ ⊂"from " "_"
   )°$"⊡ _"
   
   # selection ? columns statement-accumulator
   SelectInternal ↚ (
-    ˜⊂$$ $"select \_\n\_" "_"
-      $$ 
+    ˜Concat$$ Concat ⊂"select " "_"
   )°$"⊏ _"
   
   # filtered ? condition statement-accumulator
   WhereInternal ↚ (
-    ˜⊂$$ ˜$"\_\nwhere \_" "_"
-      $$ 
+    ˜Concat$$ ˜Concat ⊂"where " "_"
   )°$"⊚ _"
   
   # grouped ? criteria statement-accumulator
   GroupInternal ↚ (
-    ˜⊂$$ ˜$"\_\ngroup by \_" "_"
-      $$ 
+    ˜Concat$$ ˜Concat ⊂"group by " "_"
   )°$"⊕⊸_"
   
   # filtered-grouped ? condition statement-accumulator
   HavingInternal ↚ (
-    ˜⊂$$ ˜$"\_\nhaving \_" "_"
-      $$ 
+    ˜Concat$$ ˜Concat ⊂"having " "_"
   )°$"▽ _"
   
   # sorted ? criteria statement-accumulator
   OrderInternal ↚ (
-    ˜⊂$$ ˜$"\_\norder by \_" "_"
-      $$ 
+    ˜Concat$$ ˜Concat ⊂"order by " "_"
   )°$"⍆ _"
   
   # limited ? count statement-accumulator
   LimitInternal ↚ (
-    ˜⊂$$ ˜$"\_\nlimit \_" "_"
-      $$ 
+    ˜Concat$$ ˜Concat ⊂"limit " "_"
   )°$"↙ _"
   
   IdentifyStep ↚ ⊗⊓⊢"⊡⊂⊞⊢⊣⬚⊏⊚⊕▽⍆↙"
   
-  ! ←^ ˜⊂"\n˜⊂@;" ∧◇⨬(
+  ! ←^ ˜Concat"˜⊂@;" ∧◇⨬(
     FromInternal
   | JoinInternal
   | JoinInternal
