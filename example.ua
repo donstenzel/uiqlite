@@ -1,10 +1,6 @@
 # Experimental!
 Uiqlite ~ "lib" ~ Query
 
-# Simply define your tables as data defs!
-# then you can generate simple sql queries
-# over multiple tables!
-
 Uiqlite~DB!chinook
 
 ~Album [AlbumId Title ArtistId]
@@ -13,7 +9,7 @@ Uiqlite~DB!chinook
 ~Invoice [InvoiceId CustomerId InvoiceDate BillingAddress BillingCity BillingState BillingCountry BillingPostalCountry Total]
 ~Customer [CustomerId FirstName LastName Company Address City State Country PostalCode Phone Fax Email SupportRepId]
 
-Chinook~!(
+Chinook!(
   Query~!(
     ⊂ Album Artist                           # from Album inner join Artist on Album.ArtistId = Artist.ArtistId
   | ⊏ Name → Artist, ⧻∘ → [Number of Albums] # select Name as Artist, count(*) as [Number of Albums]

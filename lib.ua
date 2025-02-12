@@ -56,15 +56,14 @@ Close ← FFI!(
 # the connection.
 Connection ← ⌅(Open|Close)
 
-# creates a new data def containing a macro "!"
+# creates a new macro "<name>!"
 # which executes a function inside a database
 # connection to a database named like whatever
-# is given to the macro. need to improve this a little
+# is given to the macro. need to improve this
 DB! ←^ (
   ◇⊸⍜⊢⌵⊢
-  $$ ┌─╴_
-  $$   ! ← ⍜Uiqlite~Connection⟜^0 "_"
-  $$ └─╴
+  $$ # Call some code inside a database connection
+  $$ _! ← ⍜Uiqlite~Connection⟜^0 "_"
 )
 
 # https://www.sqlite.org/c3ref/exec.html
@@ -77,7 +76,7 @@ Exec ← FFI!(
 # https://www.sqlite.org/c3ref/prepare.html
 # prepared ? str db*
 Prepare ← FFI!(
-  □₅⊃⊓:(¯1 0 0)⋅⟜∘
+  □₅⊃⊓:(¯1 0 0)⤙◌
   Call ℤ "sqlite3_prepare_v2" {C P 𝕧 C P 𝕔 ℤ P P 𝕧 C P P 𝕔}
   ⨬(⍤.$"Failed to prepare statement: _" Err:|⊙◌)≍SqliteOk ∩°□⊢₂
   Statement
@@ -242,6 +241,7 @@ ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
     {"/+" "sum"}
     {@↧ "min"}
     {@↥ "max"}
+    {@⊞ "table"}
     {@∘ "(*)"}
     {@₀ @0}
     {@₁ @1}
@@ -315,6 +315,7 @@ ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
   
   IdentifyStep ↚ ⊗⊓⊢"⊡⊂⊞⊢⊣⬚⊏⊚⊕▽⍆↙"
   
+  # construct a query
   ! ←^ ˜Concat"˜⊂@;" ∧◇⨬(
     FromInternal
   | JoinInternal
@@ -330,3 +331,34 @@ ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
   | LimitInternal
   )⊸≡◇IdentifyStep ⊙"" ⍚San
 └─╴
+
+# returns all tables in the given database.
+# tables ? database
+Tables ← ⍜Connection⟜(
+  Query~Values Prepare Query~!(
+    ⊡ sqlite_schema
+  | ⊏ name, sql
+  | ⊚ type = ’⊞’
+  )
+)
+
+# generates a module from a table and its fields
+# module-code ? {name fields}
+GenModule ↚ $"~_ _" ⊙(
+  ⊜□⊸≠@\n
+  ⍚⍣(⊙◌°$"    [_]_")""
+  ▽±⊸≡◇⧻
+  $"[_]" /◇$"_ _"
+) °□₂
+
+# generates modules with relevant fields
+# for all tables of a given database.
+Tables! ←^ ⍚(/◇$"_\n_" ⍚GenModule Tables ◇°$"\"_\"")
+
+Execute! ←^ (
+  $"(_)" /◇$"_|_"
+
+  $$ ⍜Connection⟜(
+  $$   Query~Values Prepare Query~!_
+  $$ )
+)
