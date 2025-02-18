@@ -6,10 +6,10 @@
   Lib ← &ffi ⊂□LibPath
   # result ? return-type name param-types params
   Call ← Lib ⊂□₂
-  
+
   P ← $"_*"
   C ← $"const _"
-  
+
   𝕔 ← "char"
   ℝ ← "double"
   ℤ ← "int"
@@ -108,9 +108,10 @@ BindNull ← FFI!(
   Err!$"Failed to bind float: _"
 )
 
+# ? index text statement
 BindText ← FFI!(
   # TODO: This doesn't work, no idea why
-  □₅ ⊃(⋅⋅Statement~Stmt|∘|⋅∘|¯1|NULL|⋅⋅Statement~DB)
+  □₅ ⊃(⋅⋅Statement~Stmt|⊙∘|¯1|NULL|⋅⋅Statement~DB)
   Call ℤ "sqlite3_bind_text" {C P 𝕧 C ℤ C P 𝕔 ℤ C P 𝕧}
   Err!$"Failed to bind text: _"
 )
@@ -124,7 +125,7 @@ BindValue ← (
   | BindBlob)
 )
 
-BindValues ← ⍚BindValue +₁⊓°⊏¤
+BindValues ← ∧◇BindValue +₁⊓°⊏¤
 
 # https://www.sqlite.org/c3ref/bind_parameter_index.html"
 BindParameterIndex ← FFI!(
@@ -216,21 +217,20 @@ ExecuteInsert ← (
 
 ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
 
+ReadInternal ↚ (
+  ⟜(⊙[] ⇡ColumnCount)
+  ⋅◌⍢⟜(:⊂⤙⊓¤⊙◌ ⍚⌟ColumnValue⤙∘)StepRow
+)
+
+ReadValues ← Finalize⟜ReadInternal
+
+ReadMap ← map ⊙⍉ Finalize⟜⊃ColumnNames ReadInternal
 ┌─╴Query
-  QInternal ↚ (
-    ⟜(⊙[] ⇡ColumnCount)
-    ⋅◌⍢⟜(:⊂⤙⊓¤⊙◌ ⍚⌟ColumnValue⤙∘)StepRow
-  )
-  
-  Values ← Finalize⟜QInternal
-  
-  Map ← map ⊙⍉ Finalize⟜⊃ColumnNames QInternal
-  
   Replace ↚ ⍜⊜∘⊞⋅∘𝄐⌟⊸⦷
   RMap ↚ °⊟⍉[
     {@→ "as"}
     {@~ @.}
-    {@’ @'}
+    {@" @'}
     {@≥ ">="}
     {@≤ "<="}
     {@≠ "!="}
@@ -254,19 +254,30 @@ ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
     {@₈ @8}
     {@₉ @9}
   ]
-  San ↚ ∧◇Replace RMap
-  
+
+  San ↚ (
+    ×⊸↻₋₁◿₂\+ ↥₀-↻₋₁⊸∩⌟=@\\@"
+    /◇⊂⊜(
+      □◇⨬(
+        ∧◇Replace RMap # apply replacements outside of strings
+      | {"\"" "''"}    # unescape double quotes
+        {"\\\"" "'"}   # and double single quotes
+        ∧◇Replace      # inside of a string
+      )⊓⊢□
+    )⊸+₁
+  )
+
   JTMap ↚ °⊟⍉[
     {"⬚⊂" "full join"}
-    {"⊞⊂" "cross join"}
+    {"×⊂" "cross join"}
     {"⊣⊂" "left join"}
     {"⊢⊂" "right join"}
     {"⊂" "inner join"}
   ]
   JType ↚ °□⊡⊗⊓□JTMap
-  
-  Concat ← $"_\n_"
-  
+
+  Concat ↚ $"_\n_"
+
   # joined ? join statement-accumulator
   JoinInternal ↚ (
     °$"_ _ _"
@@ -277,44 +288,52 @@ ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
            $$ $$ \_ \_
            $$ $$ on \_ = \_
   )
-  
+
   # from ? table statement-accumulator
   FromInternal ↚ (
-    ˜Concat$$ ⊂"from " "_"
+    ˜Concat$$ "from _"
   )°$"⊡ _"
-  
+
   # selection ? columns statement-accumulator
   SelectInternal ↚ (
-    ˜Concat$$ Concat ⊂"select " "_"
+    ˜Concat$$ Concat "select _"
   )°$"⊏ _"
-  
+
   # filtered ? condition statement-accumulator
   WhereInternal ↚ (
-    ˜Concat$$ ˜Concat ⊂"where " "_"
+    ˜Concat$$ ˜Concat "where _"
   )°$"⊚ _"
-  
+
   # grouped ? criteria statement-accumulator
   GroupInternal ↚ (
-    ˜Concat$$ ˜Concat ⊂"group by " "_"
+    ˜Concat$$ ˜Concat "group by _"
   )°$"⊕⊸_"
-  
+
   # filtered-grouped ? condition statement-accumulator
   HavingInternal ↚ (
-    ˜Concat$$ ˜Concat ⊂"having " "_"
+    ˜Concat$$ ˜Concat "having _"
   )°$"▽ _"
-  
+
   # sorted ? criteria statement-accumulator
   OrderInternal ↚ (
-    ˜Concat$$ ˜Concat ⊂"order by " "_"
+    ˜Concat$$ ˜Concat "order by _"
   )°$"⍆ _"
-  
+
   # limited ? count statement-accumulator
   LimitInternal ↚ (
-    ˜Concat$$ ˜Concat ⊂"limit " "_"
+    ˜Concat$$ ˜Concat "limit _"
   )°$"↙ _"
-  
-  IdentifyStep ↚ ⊗⊓⊢"⊡⊂⊞⊢⊣⬚⊏⊚⊕▽⍆↙"
-  
+
+  # limited ? count statement-accumulator
+  InsertInternal ↚ (
+    ˜Concat$$ "insert into _"
+  )°$"+ _"
+
+  # limited ? count statement-accumulator
+  ValuesInternal ↚ (
+    ˜Concat$$ ˜Concat "values _"
+  )°$"⍚[_]"
+
   # construct a query
   ! ←^ ˜Concat"˜⊂@;" ∧◇⨬(
     FromInternal
@@ -329,21 +348,54 @@ ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
   | HavingInternal
   | OrderInternal
   | LimitInternal
-  )⊸≡◇IdentifyStep ⊙"" ⍚San
+  | InsertInternal
+  | ValuesInternal
+  )⊸≡◇(⊗⊓⊢"⊡⊂×⊢⊣⬚⊏⊚⊕▽⍆↙+⍚") ⊙"" ⍚San
+
+  # executes query directly and gets values
+  Values! ←^ (
+    /$"_|_"
+    $$ ⍜Uiqlite~Connection⟜(
+    $$   Uiqlite~ReadValues Uiqlite~Prepare !(_)
+    $$ )
+  )
+
+  # executes statement
+  Exec! ←^ (
+    /$"_|_"
+    $$ ⍜Uiqlite~Connection⟜(
+    $$   Uiqlite~Exec !(_)
+    $$ )
+  )
+  ExecFmt! ←^ (
+    @\W /$"_|_"
+    $$ ⍜Uiqlite~Connection⟜(
+    $$   ∧◇(⍜⊜∘⊞⋅∘𝄐⌟⊸⦷) ⊙⤙⊙⊙◌ ◴⊸⊜□⊸⦷"$_" !(_)
+    $$   Uiqlite~Exec
+    $$ )
+  )
+
+  ValuesFmt! ←^ (
+    @\W /$"_|_"
+    $$ ⍜Uiqlite~Connection⟜(
+    $$   ∧◇(⍜⊜∘⊞⋅∘𝄐⌟⊸⦷) ⊙⤙⊙⊙◌ ◴⊸⊜□⊸⦷"$_" !(_)
+    $$   Uiqlite~ReadValues Uiqlite~Prepare
+    $$ )
+  )
 └─╴
 
 # returns all tables in the given database.
 # tables ? database
 Tables ← ⍜Connection⟜(
-  Query~Values Prepare Query~!(
+  ReadValues Prepare Query~!(
     ⊡ sqlite_schema
   | ⊏ name, sql
-  | ⊚ type = ’⊞’
+  | ⊚ type = "table"
   )
 )
 
 # generates a module from a table and its fields
-# module-code ? {name fields}
+# module-code ? {name repr}
 GenModule ↚ $"~_ _" ⊙(
   ⊜□⊸≠@\n
   ⍚⍣(⊙◌°$"    [_]_")""
@@ -353,12 +405,4 @@ GenModule ↚ $"~_ _" ⊙(
 
 # generates modules with relevant fields
 # for all tables of a given database.
-Tables! ←^ ⍚(/◇$"_\n_" ⍚GenModule Tables ◇°$"\"_\"")
-
-Execute! ←^ (
-  $"(_)" /◇$"_|_"
-
-  $$ ⍜Connection⟜(
-  $$   Query~Values Prepare Query~!_
-  $$ )
-)
+Tables! ←^ ◇(/$"_\n_" ⍚GenModule Tables °$"\"_\"")⊢

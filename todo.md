@@ -1,0 +1,2 @@
+- [ ] Update readme (module gen, query building)
+- [ ] reimplement Library Path logic from main branch
