@@ -23,14 +23,15 @@ SqliteDone ← 101
 ~Statement {Stmt DB}
 
 IsNull  ← ≍NaN
-IsInt   ← ⨬(0|≍⊸⁅)↧⊸⊃(=0type|≍[]△)
-IsFloat ← ⨬(0|¬≍⊸⁅)↧⊸⊃(=0type|≍[]△)
-IsText  ← ↧⊃(=2type|=1⧻△)
-IsBlob  ← ⨬(0|/↧≤255)↧⊸⊃(=0type|=1⧻△)
+IsInt   ← ⨬0(≍⊸⁅) ↧∩=₀⊸⊃type(⧻△)
+IsFloat ← ⨬0(¬≍⊸⁅) ↧∩=₀⊸⊃type(⧻△)
+IsText  ← ↧∩=₁⊃type(⧻△)
+IsBlob  ← ⨬0(/↧≤₂₅₅)↧⊸⊃(=₀type|=₁⧻△)
 
 InferType ← ⍣(
   ⊢⊚[⊃(IsNull|IsInt|IsFloat|IsText|IsBlob)]
-| ⍤."Invalid value"◌)
+| ⍤.$"Invalid value: _"
+)
 
 # https://www.sqlite.org/c3ref/errcode.html
 Err ← Lib FFI!{C P 𝕔 "sqlite3_errmsg" C P ℤ} □₁
@@ -56,15 +57,8 @@ Close ← FFI!(
 # the connection.
 Connection ← ⌅(Open|Close)
 
-# creates a new macro "<name>!"
-# which executes a function inside a database
-# connection to a database named like whatever
-# is given to the macro. need to improve this
-DB! ←^ (
-  ◇⊸⍜⊢⌵⊢
-  $$ # Call some code inside a database connection
-  $$ _! ← ⍜Uiqlite~Connection⟜^0 "_"
-)
+# executes a function within a database connection
+C! ← ⍜Connection⟜^0
 
 # https://www.sqlite.org/c3ref/exec.html
 Exec ← FFI!(
@@ -110,9 +104,8 @@ BindNull ← FFI!(
 
 # ? index text statement
 BindText ← FFI!(
-  # TODO: This doesn't work, no idea why
-  □₅ ⊃(⋅⋅Statement~Stmt|⊙∘|¯1|NULL|⋅⋅Statement~DB)
-  Call ℤ "sqlite3_bind_text" {C P 𝕧 C ℤ C P 𝕔 ℤ C P 𝕧}
+  □₅ ⊃(⋅⋅Statement~Stmt|⊙∘|⧻⋅utf₈|¯1|⋅⋅Statement~DB)
+  Call ℤ "sqlite3_bind_text" {C P 𝕧 C ℤ C P 𝕔 ℤ ℤ}
   Err!$"Failed to bind text: _"
 )
 
@@ -125,13 +118,13 @@ BindValue ← (
   | BindBlob)
 )
 
-BindValues ← ∧◇BindValue +₁⊓°⊏¤
+BindValues ← ⍚BindValue +₁⊓°⊏¤
 
 # https://www.sqlite.org/c3ref/bind_parameter_index.html"
 BindParameterIndex ← FFI!(
   □₂ ⊃⤚⋅Statement~Stmt$"Invalid named parameter: \"_\""
   Call ℤ "sqlite3_bind_parameter_index" {C P 𝕧 C P 𝕔}
-  𝄐⌞˜⍤⊸>₀
+  ˜⍤⤚>₀
 )
 
 BindNamed ← BindValue⊸₂𝄐BindParameterIndex
@@ -225,6 +218,7 @@ ReadInternal ↚ (
 ReadValues ← Finalize⟜ReadInternal
 
 ReadMap ← map ⊙⍉ Finalize⟜⊃ColumnNames ReadInternal
+
 ┌─╴Query
   Replace ↚ ⍜⊜∘⊞⋅∘𝄐⌟⊸⦷
   RMap ↚ °⊟⍉[
@@ -241,7 +235,6 @@ ReadMap ← map ⊙⍉ Finalize⟜⊃ColumnNames ReadInternal
     {"/+" "sum"}
     {@↧ "min"}
     {@↥ "max"}
-    {@⊞ "table"}
     {@∘ "(*)"}
     {@₀ @0}
     {@₁ @1}
@@ -256,20 +249,21 @@ ReadMap ← map ⊙⍉ Finalize⟜⊃ColumnNames ReadInternal
   ]
 
   San ↚ (
-    ×⊸↻₋₁◿₂\+ ↥₀-↻₋₁⊸∩⌟=@\\@"
+    ↥₀-↻₋₁⊸∩⌟=@\\@"
+    ×⊸↻₋₁◿₂\+
     /◇⊂⊜(
-      □◇⨬(
+      □⨬(
         ∧◇Replace RMap # apply replacements outside of strings
       | {"\"" "''"}    # unescape double quotes
         {"\\\"" "'"}   # and double single quotes
         ∧◇Replace      # inside of a string
-      )⊓⊢□
+      )⊢
     )⊸+₁
   )
 
   JTMap ↚ °⊟⍉[
     {"⬚⊂" "full join"}
-    {"×⊂" "cross join"}
+    {"⊞⊂" "cross join"}
     {"⊣⊂" "left join"}
     {"⊢⊂" "right join"}
     {"⊂" "inner join"}
@@ -281,7 +275,7 @@ ReadMap ← map ⊙⍉ Finalize⟜⊃ColumnNames ReadInternal
   # joined ? join statement-accumulator
   JoinInternal ↚ (
     °$"_ _ _"
-    ⊓JType⊃∩San$"⊢▽⊸∊ _~Fields _~Fields"
+    ⊓JType◠$"⊢▽⊸∊ _~Fields _~Fields"
     :⊙⟜₂$$ °□₂ ⍚⌟$"\_.\_" {"_" "_"} _
     ˜Concat$$ "_" "_" "_" _
            $$ $$ from \_
@@ -324,12 +318,12 @@ ReadMap ← map ⊙⍉ Finalize⟜⊃ColumnNames ReadInternal
     ˜Concat$$ ˜Concat "limit _"
   )°$"↙ _"
 
-  # limited ? count statement-accumulator
+  # insert ? table statement-accumulator
   InsertInternal ↚ (
     ˜Concat$$ "insert into _"
   )°$"+ _"
 
-  # limited ? count statement-accumulator
+  # w/values ? tuples statement-accumulator
   ValuesInternal ↚ (
     ˜Concat$$ ˜Concat "values _"
   )°$"⍚[_]"
@@ -351,40 +345,42 @@ ReadMap ← map ⊙⍉ Finalize⟜⊃ColumnNames ReadInternal
   | InsertInternal
   | ValuesInternal
   )⊸≡◇(⊗⊓⊢"⊡⊂×⊢⊣⬚⊏⊚⊕▽⍆↙+⍚") ⊙"" ⍚San
-
-  # executes query directly and gets values
-  Values! ←^ (
-    /$"_|_"
-    $$ ⍜Uiqlite~Connection⟜(
-    $$   Uiqlite~ReadValues Uiqlite~Prepare !(_)
-    $$ )
-  )
-
-  # executes statement
-  Exec! ←^ (
-    /$"_|_"
-    $$ ⍜Uiqlite~Connection⟜(
-    $$   Uiqlite~Exec !(_)
-    $$ )
-  )
-  ExecFmt! ←^ (
-    @\W /$"_|_"
-    $$ ⍜Uiqlite~Connection⟜(
-    $$   ∧◇(⍜⊜∘⊞⋅∘𝄐⌟⊸⦷) ⊙⤙⊙⊙◌ ◴⊸⊜□⊸⦷"$_" !(_)
-    $$   Uiqlite~Exec
-    $$ )
-  )
-
-  ValuesFmt! ←^ (
-    @\W /$"_|_"
-    $$ ⍜Uiqlite~Connection⟜(
-    $$   ∧◇(⍜⊜∘⊞⋅∘𝄐⌟⊸⦷) ⊙⤙⊙⊙◌ ◴⊸⊜□⊸⦷"$_" !(_)
-    $$   Uiqlite~ReadValues Uiqlite~Prepare
-    $$ )
-  )
 └─╴
 
-# returns all tables in the given database.
+# executes a query directly and gets values
+Values! ←^ $"ReadValues Prepare Query~!(_)" /$"_|_"
+
+# formats given values, executes query and
+# returns its resulting values
+ValuesFmt! ←^ (
+  /$"_|_"
+  $$ Prepare Query~!(_)
+  $$ ReadValues BindValues⤚:
+)
+
+# executes a query directly and gets values as a map
+Map! ←^ $"ReadMap Prepare Query~!(_)" /$"_|_"
+
+# formats given values, executes query and
+# returns its resulting values as a map
+MapFmt! ←^ (
+  /$"_|_"
+  $$ Prepare Query~!(_)
+  $$ ReadMap BindValues⤚:
+)
+
+# executes a statement in one fell swoop
+Exec! ←^ $"Exec Query~!(_)" /$"_|_"
+
+# formats given values into statement and executes it
+ExecFmt! ←^ (
+  /$"_|_"
+  $$ Prepare Query~!(_)
+  $$ ◌⊃Finalize Step BindValues⤚:
+)
+
+# returns all tables in the given database,
+# as name-code-pairs.
 # tables ? database
 Tables ← ⍜Connection⟜(
   ReadValues Prepare Query~!(
@@ -395,7 +391,7 @@ Tables ← ⍜Connection⟜(
 )
 
 # generates a module from a table and its fields
-# module-code ? {name repr}
+# module-def ? {name repr}
 GenModule ↚ $"~_ _" ⊙(
   ⊜□⊸≠@\n
   ⍚⍣(⊙◌°$"    [_]_")""

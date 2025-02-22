@@ -1,28 +1,34 @@
 # Experimental!
-Uiqlite ~ "lib" ~ Query
+Uiqlite ~ "lib" ~ C! Map! Tables! Values! ValuesFmt!
 
-DB ← "chinook"
+Tables!"chinook"
 
-Uiqlite~Tables!"chinook"
+C!(
+  &s⊸Values!(
+    ⊂ Album Artist
+  | ⊏ Name → Artist, ⧻∘ → [Number of Albums]
+  | ⊚ True
+  | ⊕⊸Name
+  | ▽ ⧻∘ ≥ 3
+  | ⍆ Name ⍏, ⧻(Name) ⍖
+  | ↙ 10
+  )
 
-&s Query~Values!(
-  ⊂ Album Artist
-| ⊏ Name → Artist, ⧻∘ → [Number of Albums]
-| ⊚ True
-| ⊕⊸Name
-| ▽ ⧻∘ ≥ 3
-| ⍆ Name ⍏, ⧻(Name) ⍖
-| ↙ 10
-) DB
+  &s⊸Values!(
+    ⊡ Album
+  | ⊏ Title
+  )
 
-&s Query~Values!(
-  ⊡ Album
-| ⊏ Title
-) DB
+  &s⊸Map!(
+    ⊂ Customer Invoice
+  | ⊕⊸Customer~CustomerId
+  | ⊏ FirstName, LastName, /+(Total) → Sum
+  | ↙ 10
+  )
 
-&s Query~Values!(
-  ⊂ Customer Invoice
-| ⊕⊸Customer~CustomerId
-| ⊏ FirstName, LastName, /+(Total) → Sum
-| ↙ 10
-) DB
+  &s ValuesFmt!(
+    ⊡ Album
+  | ⊏ Title, ArtistId
+  | ⊚ ArtistId = $id
+  ) ⊙1
+) "chinook"
