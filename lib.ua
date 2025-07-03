@@ -36,7 +36,7 @@ InferType ← ⍣(
 # https://www.sqlite.org/c3ref/errcode.html
 Err ← Lib FFI!{C P 𝕔 "sqlite3_errmsg" C P ℤ} □₁
 
-Err! ← ⨬(⍤.^0 Err|◌)≍SqliteOk
+Err! ← ⨬(⍤.^0 Err)◌ ≍SqliteOk
 
 # https://www.sqlite.org/c3ref/open.html
 Open ← FFI!(
@@ -50,15 +50,13 @@ Close ← FFI!(
   Err!$"Failed to close database: _"
 )
 
-# Should be used like `⍜Connection⟜F`.
+# Should be used like `⍜Connection F`.
 # Inside F, you have access to the database
-# pointer. `⟜` ensures that the pointer
-# ends up on top of the stack to close
-# the connection.
-Connection ← ⌅(Open|Close)
+# pointer.
+Connection ← ⌅(Open|.Open|Close)
 
 # executes a function within a database connection
-C! ← ⍜Connection⟜^0
+C! ← ⍜Connection^0
 
 # https://www.sqlite.org/c3ref/exec.html
 Exec ← FFI!(
@@ -70,17 +68,17 @@ Exec ← FFI!(
 # https://www.sqlite.org/c3ref/prepare.html
 # prepared ? str db*
 Prepare ← FFI!(
-  □₅⊃⊓:(¯1 0 0)⤙◌
+  □₅⊃⊓:(¯1 0 0)⤙⊓◌∘
   Call ℤ "sqlite3_prepare_v2" {C P 𝕧 C P 𝕔 ℤ P P 𝕧 C P P 𝕔}
-  ⨬(⍤.$"Failed to prepare statement: _" Err:|⊙◌)≍SqliteOk ∩°□⊢₂
+  ⨬(⍤.$"Failed to prepare statement: _"⤚⋅Err|⊙◌)≍SqliteOk ∩°□⊢₂
   Statement
 )
 
 # https://www.sqlite.org/c3ref/bind_blob.html
 BindBlob ← FFI!(
   # TODO: This doesn't work, no idea why
-  □₅ ⊃(⋅⋅Statement~Stmt|⊙∘|⋅⧻|NULL|⋅⋅Statement~DB)
-  Call ℤ "sqlite3_bind_blob" {C P 𝕧 C ℤ C P ℤ C ℤ C P 𝕧}
+  □₅ ⊃(⋅⋅Statement~Stmt|⊙∘|⋅⧻|¯1|⋅⋅Statement~DB)
+  Call ℤ "sqlite3_bind_blob" {C P 𝕧 C ℤ C P ℤ C ℤ ℤ}
   Err!$"Failed to bind blob: _"
 )
 
@@ -124,7 +122,7 @@ BindValues ← ⍚BindValue +₁⊓°⊏¤
 BindParameterIndex ← FFI!(
   □₂ ⊃⤚⋅Statement~Stmt$"Invalid named parameter: \"_\""
   Call ℤ "sqlite3_bind_parameter_index" {C P 𝕧 C P 𝕔}
-  ˜⍤⤚>₀
+  ˜⍤⤚⊓>₀∘
 )
 
 BindNamed ← BindValue⊸₂𝄐BindParameterIndex
@@ -212,7 +210,7 @@ ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
 
 ReadInternal ↚ (
   ⟜(⊙[] ⇡ColumnCount)
-  ⋅◌⍢⟜(:⊂⤙⊓¤⊙◌ ⍚⌟ColumnValue⤙∘)StepRow
+  ⋅◌⍢⟜(𝄐⌞˜⊂¤ ⍚⌟ColumnValue⤙∩∘)StepRow
 )
 
 ReadValues ← Finalize⟜ReadInternal
@@ -382,7 +380,7 @@ ExecFmt! ←^ (
 # returns all tables in the given database,
 # as name-code-pairs.
 # tables ? database
-Tables ← ⍜Connection⟜(
+Tables ← ⍜Connection(
   ReadValues Prepare Query~!(
     ⊡ sqlite_schema
   | ⊏ name, sql
