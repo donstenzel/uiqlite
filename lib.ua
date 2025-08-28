@@ -7,20 +7,20 @@
   # result ? return-type name param-types params
   Call ← Lib ⊂□₂
 
-  P ← $"_*"
-  C ← $"const _"
+  Out ← $"out _"
 
-  𝕔 ← "char"
-  ℝ ← "double"
-  ℤ ← "int"
-  𝕧 ← "void"
+  Double ← "double"
+  Int    ← "int"
+  Str    ← "char*"
+  DB     ← "ulong"
+  Stmt   ← "ulong"
 └─╴
 
 SqliteOk   ← 0
 SqliteRow  ← 100
 SqliteDone ← 101
 
-~Statement {Stmt DB}
+# [TODO]: this can probably be simplified
 
 IsNull  ← ≍NaN
 IsInt   ← ⨬0(≍⊸⁅) ↧∩=₀⊸⊃type(⧻△)
@@ -29,24 +29,27 @@ IsText  ← ↧∩=₁⊃type(⧻△)
 IsBlob  ← ⨬0(/↧≤₂₅₅)↧⊸⊃(=₀type|=₁⧻△)
 
 InferType ← ⍣(
-  ⊢⊚[⊃(IsNull|IsInt|IsFloat|IsText|IsBlob)]
-| ⍤.$"Invalid value: _"
+  ⊢⊚⊃[IsNull|IsInt|IsFloat|IsText|IsBlob]
+| ⍤⊙0 $"Invalid value: _"
 )
 
-# https://www.sqlite.org/c3ref/errcode.html
-Err ← Lib FFI!{C P 𝕔 "sqlite3_errmsg" C P ℤ} □₁
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/errcode.html)
+# msg ? db
+Err ← FFI!(Call Str "sqlite3_errmsg" {DB} □₁)
 
-Err! ← ⨬(⍤.^0 Err)◌ ≍SqliteOk
+Err! ← ⍤^⤚⋅Err≍SqliteOk
 
-# https://www.sqlite.org/c3ref/open.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/open.html)
+# db ? path
 Open ← FFI!(
-  ⍜□₂(Call ℤ "sqlite3_open" {C P 𝕔 P P 𝕧}) ⊙0
-  ⍤$"Failed to open database: _"⤙≍SqliteOk
+  ⍜□₂(Call Int "sqlite3_open" {Str Out DB}) ⊙0
+  ⊸Err!$"Failed to open database: _"
 )
 
-# https://www.sqlite.org/c3ref/close.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/close.html)
+# ? db
 Close ← FFI!(
-  Call ℤ "sqlite3_close" {C P 𝕧} □₁ .
+  Call Int "sqlite3_close" {DB}⊸□₁
   Err!$"Failed to close database: _"
 )
 
@@ -55,348 +58,261 @@ Close ← FFI!(
 # pointer.
 Connection ← ⌅(Open|.Open|Close)
 
-# executes a function within a database connection
+# executes a function within a database connection.
+# the database pointer will be pushed to the stack.
 C! ← ⍜Connection^0
 
-# https://www.sqlite.org/c3ref/exec.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/exec.html)
+# Track caller!
+# ? sql db
 Exec ← FFI!(
-  □₅ ⊓:(0 0 "www")
-  Call ℤ "sqlite3_exec" {C P 𝕧 C P 𝕔 C P 𝕧 C P 𝕧 C P P 𝕔}
-  ⨬(⍤.$"Failed to exec: _"|◌)≍SqliteOk °□₂
+  □₅⊸⊓:∩₃NULL
+  Call Int "sqlite3_exec" {DB Str "void*" "void*" Str}
+  Err!$"Failed to execute: _"
 )
 
-# https://www.sqlite.org/c3ref/prepare.html
-# prepared ? str db*
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/prepare.html)
+# Track caller!
+# stmt ? str db
 Prepare ← FFI!(
-  □₅⊃⊓:(¯1 0 0)⤙⊓◌∘
-  Call ℤ "sqlite3_prepare_v2" {C P 𝕧 C P 𝕔 ℤ P P 𝕧 C P P 𝕔}
-  ⨬(⍤.$"Failed to prepare statement: _"⤚⋅Err|⊙◌)≍SqliteOk ∩°□⊢₂
-  Statement
+  □₅⊸⊓:(¯1 0 NULL)
+  Call Int "sqlite3_prepare_v2" {DB Str Int Out Stmt Str}
+  𝄐⌞Err!$"Failed to prepare statement: _" °□₂
 )
 
-# https://www.sqlite.org/c3ref/bind_blob.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/bind_blob.html)
+# ? idx bytes stmt db
 BindBlob ← FFI!(
-  # TODO: This doesn't work, no idea why
-  □₅ ⊃(⋅⋅Statement~Stmt|⊙∘|⋅⧻|¯1|⋅⋅Statement~DB)
-  Call ℤ "sqlite3_bind_blob" {C P 𝕧 C ℤ C P ℤ C ℤ ℤ}
+  □₄ ⊃⤙⊙⊙◌¯1
+  Call Int "sqlite3_bind_blob" {Stmt Int "byte:3" Int Int}
   Err!$"Failed to bind blob: _"
 )
 
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/bind_blob.html)
+# ? idx int stmt db
 BindInt ← FFI!(
-  □₃ ⊃(⋅⋅Statement~Stmt|⊙⊙Statement~DB)
-  Call ℤ "sqlite3_bind_int" {C P 𝕧 C ℤ C ℤ}
+  Call Int "sqlite3_bind_int" {Stmt Int Int} □₃⤙⊙⊙◌
   Err!$"Failed to bind integer: _"
 )
 
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/bind_blob.html)
+# ? idx num stmt db
 BindFloat ← FFI!(
-  □₃ ⊃(⋅⋅Statement~Stmt|⊙⊙Statement~DB)
-  Call ℤ "sqlite3_bind_double" {C P 𝕧 C ℤ C ℝ}
+  Call Int "sqlite3_bind_double" {Stmt Int Double} □₃⤙⊙⊙◌
   Err!$"Failed to bind float: _"
 )
 
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/bind_blob.html)
+# ? idx stmt db
 BindNull ← FFI!(
-  □₂ ⊃(⋅Statement~Stmt|⊙Statement~DB)
-  Call ℤ "sqlite3_bind_null" {C P 𝕧 C ℤ}
-  Err!$"Failed to bind float: _"
+  Call Int "sqlite3_bind_null" {Stmt Int} ˜□₂
+  Err!$"Failed to bind null: _"
 )
 
-# ? index text statement
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/bind_blob.html)
+# ? idx text stmt db
 BindText ← FFI!(
-  □₅ ⊃(⋅⋅Statement~Stmt|⊙∘|⧻⋅utf₈|¯1|⋅⋅Statement~DB)
-  Call ℤ "sqlite3_bind_text" {C P 𝕧 C ℤ C P 𝕔 ℤ ℤ}
+  □₅ ⊃⤙⊙⊙◌⊃(⧻⋅utf₈)¯1
+  Call Int "sqlite3_bind_text" {Stmt Int Str Int Int}
   Err!$"Failed to bind text: _"
 )
 
+# binds a value to the parameter with the given index
+# ? idx value stmt db
 BindValue ← (
-  ◡⋅InferType
-  ⨬(𝄐BindNull
-  | BindInt
-  | BindFloat
-  | BindText
-  | BindBlob)
+  ⨬(𝄐BindNull|BindInt|BindFloat|BindText|BindBlob)◡⋅InferType
 )
 
-BindValues ← ⍚BindValue +₁⊓°⊏¤
+# binds values to parameters equal to
+# their index +1, so binding {"Foo" "Bar" "Baz"}
+# would bind to parameter 1, 2 and 3, respectively.
+# Track caller!
+# ? stmt values db
+BindValues ← ⍚BindValue +₁°⊏ :
 
-# https://www.sqlite.org/c3ref/bind_parameter_index.html"
-BindParameterIndex ← FFI!(
-  □₂ ⊃⤚⋅Statement~Stmt$"Invalid named parameter: \"_\""
-  Call ℤ "sqlite3_bind_parameter_index" {C P 𝕧 C P 𝕔}
-  ˜⍤⤚⊓>₀∘
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/bind_parameter_index.html")
+# idx ? name stmt
+GetParameterIndex ← FFI!(
+  Call Int "sqlite3_bind_parameter_index" {Stmt Str} □₂ ⤚:
+  ˜⍤⤚⊓≠₀$"Invalid named parameter: '_'"
 )
 
-BindNamed ← BindValue⊸₂𝄐BindParameterIndex
+# binds a value to the parameter with the given name
+# ? name value stmt db
+BindNamed ← BindValue⊸𝄐⌟GetParameterIndex
 
-BindNamedMap ← ⍚⌟BindNamed °map
+# binds values inside a map from parameter name to value
+# ? map stmt db
+BindNamedMap ← ⍚BindNamed °map
 
-# https://www.sqlite.org/c3ref/step.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/step.html)
+# code ? stmt
 Step ← FFI!(
-  □₁ Statement~Stmt
-  Call ℤ "sqlite3_step" {C P 𝕧}
+  Call Int "sqlite3_step" {Stmt} □₁
 )
 
+# [TODO]: rework this for other codes?
+# isRow ? stmt
 StepRow ← ≍SqliteRow Step
 
-# https://www.sqlite.org/c3ref/column_count.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/column_count.html)
+# cols ? stmt
 ColumnCount ← FFI!(
-  □₁ Statement~Stmt
-  Call ℤ "sqlite3_column_count" {C P 𝕧}
+  Call Int "sqlite3_column_count" {DB} □₁
 )
 
-# https://www.sqlite.org/c3ref/column_name.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/column_name.html)
+# name ? idx stmt
 ColumnName ← FFI!(
-  □₂⤚⋅Statement~Stmt
-  Call P 𝕔 "sqlite3_column_name" {C P 𝕧 C ℤ}
+  Call Str "sqlite3_column_name" {Stmt Int} ˜□₂
 )
 
-# https://www.sqlite.org/c3ref/column_blob.html
-# subtract one from the type so they start at 0,
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/column_blob.html)
+# subtracts one from the type so they start at 0,
 # which makes it easier to use a switch later.
+# type ? idx stmt
 ColumnType ← FFI!(
-  □₂⤚⋅Statement~Stmt
-  -₁ Call ℤ "sqlite3_column_type" {C P 𝕧 C ℤ}
+  -₁ Call Int "sqlite3_column_type" {Stmt Int} ˜□₂
 )
 
-# https://www.sqlite.org/c3ref/column_blob.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/column_blob.html)
+# blob ? idx stmt
 ColumnBlob ← FFI!(
-  □₂⤚⋅Statement~Stmt
-  # 0⍤."Returning a BLOB is currently unsupported"◌
-  # TODO: This doesn't work as expected
-  Call P ℤ "sqlite3_column_blob" {C P 𝕧 C ℤ}
+  &memcpy⊃(
+    Call "byte*" "sqlite3_column_blob" {Stmt Int} ˜□₂
+  | Call Int "sqlite3_column_bytes" {Stmt Int} ˜□₂
+  )
 )
 
-# https://www.sqlite.org/c3ref/column_blob.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/column_blob.html)
+# num ? idx stmt
 ColumnFloat ← FFI!(
-  □₂⤚⋅Statement~Stmt
-  Call ℝ "sqlite3_column_double" {C P 𝕧 C ℤ}
+  Call Double "sqlite3_column_double" {Stmt Int} ˜□₂
 )
 
-# https://www.sqlite.org/c3ref/column_blob.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/column_blob.html)
+# int ? idx stmt
 ColumnInt ← FFI!(
-  □₂⤚⋅Statement~Stmt
-  Call ℤ "sqlite3_column_int" {C P 𝕧 C ℤ}
+  Call Int "sqlite3_column_int" {Stmt Int} ˜□₂
 )
 
-# https://www.sqlite.org/c3ref/column_blob.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/column_blob.html)
+# text ? idx stmt
 ColumnText ← FFI!(
-  □₂⤚⋅Statement~Stmt
-  Call P 𝕔 "sqlite3_column_text" {C P 𝕧 C ℤ}
+  Call Str "sqlite3_column_text" {Stmt Int} ˜□₂
 )
 
-# Helper function to automatically infer column value and return it
+# Helper function to automatically infer column type and return value
+# value ? idx stmt
 ColumnValue ← (
-  ◡ColumnType
-  ⨬(ColumnInt
-  | ColumnFloat
-  | ColumnText
-  | ColumnBlob
-  | NaN)
+  ⨬(ColumnInt|ColumnFloat|ColumnText|ColumnBlob|NaN)◡ColumnType
 )
 
-# https://www.sqlite.org/c3ref/finalize.html
+# [SQLite3 Documentation](https://www.sqlite.org/c3ref/finalize.html)
+# ? stmt db
 Finalize ← FFI!(
-  □₁ °Statement
-  Call ℤ "sqlite3_finalize" {C P 𝕧}
+  Call Int "sqlite3_finalize" {Stmt} □₁
   Err!$"Failed to finalize statement: _"
 )
 
-ExecuteInsert ← (
-  Step⟜⊸Statement~DB
-  ⨬(⍤.$"Failed to execute insert statement: _" Err|◌)≍SqliteDone
-  Finalize
+# Track caller!
+# ? stmt db
+ExecStmt ← (
+  ⤚⋅Err ≍SqliteDone⊸⊃Finalize Step
+  ⍤$"Failed to execute statement: _"
 )
 
-ColumnNames ← ⍚⌟ColumnName⇡⊸ColumnCount
+# names ? stmt
+ColumnNames ← ⍚ColumnName⇡⊸ColumnCount
 
-ReadInternal ↚ (
-  ⟜(⊙[] ⇡ColumnCount)
-  ⋅◌⍢⟜(𝄐⌞˜⊂¤ ⍚⌟ColumnValue⤙∩∘)StepRow
-)
+# row ? stmt
+ReadRow ← ⍚ColumnValue⇡⊸ColumnCount
 
-ReadValues ← Finalize⟜ReadInternal
+# values ? stmt
+ReadInternal ← ⍢⟜ReadRow StepRow
 
-ReadMap ← map ⊙⍉ Finalize⟜⊃ColumnNames ReadInternal
+# values ? stmt db
+ReadValues ← ⊃Finalize ReadInternal
 
-┌─╴Query
+# map ? stmt db
+ReadMap ← map⊙⍉⊃Finalize⊃ColumnNames ReadInternal
+
+┌╶╶Query
+  # [TODO]: more keywords / replacements
+  (/$"_\n_"⍚$"_ ← ")^!(
+    INSERT | INTO | HAVING | SELECT | GROUP | INNER
+  | LIMIT | ORDER | WHERE | COUNT | DESC | FROM
+  | JOIN | ASC | SUM | AS | BY | ON | VALUES | CREATE
+  | TABLE | INTEGER | NOT | NULL | FOREIGN | KEY
+  | REFERENCES | PRIMARY | NVARCHAR
+  )
+
+  RMap    ← °⊟⍉[{@. @;} {@~ @.} {@: @,} {@× @*} {@≤ "<="} {@≥ ">="}]
   Replace ↚ ⍜⊜∘⊞⋅∘𝄐⌟⊸⦷
-  RMap ↚ °⊟⍉[
-    {@→ "as"}
-    {@~ @.}
-    {@" @'}
-    {@≥ ">="}
-    {@≤ "<="}
-    {@≠ "!="}
-    {@⍏ "asc"}
-    {@⍖ "desc"}
-    {@⧻ "count"}
-    {"÷⊃⧻/+" "avg"}
-    {"/+" "sum"}
-    {@↧ "min"}
-    {@↥ "max"}
-    {@∘ "(*)"}
-    {@₀ @0}
-    {@₁ @1}
-    {@₂ @2}
-    {@₃ @3}
-    {@₄ @4}
-    {@₅ @5}
-    {@₆ @6}
-    {@₇ @7}
-    {@₈ @8}
-    {@₉ @9}
-  ]
 
-  San ↚ (
-    ↥₀-↻₋₁⊸∩⌟=@\\@"
-    ×⊸↻₋₁◿₂\+
-    /◇⊂⊜(
-      □⨬(
-        ∧◇Replace RMap # apply replacements outside of strings
-      | {"\"" "''"}    # unescape double quotes
-        {"\\\"" "'"}   # and double single quotes
-        ∧◇Replace      # inside of a string
-      )⊢
-    )⊸+₁
-  )
+  ! ←^ ⊂"$ " ⊂⊙@; ⍥⋅@\s⊸=@\n ∧◇Replace RMap ⊓°□₁◌
+└╶╶
 
-  JTMap ↚ °⊟⍉[
-    {"⬚⊂" "full join"}
-    {"⊞⊂" "cross join"}
-    {"⊣⊂" "left join"}
-    {"⊢⊂" "right join"}
-    {"⊂" "inner join"}
-  ]
-  JType ↚ °□⊡⊗⊓□JTMap
+# allows the creation of SQL queries in unquoted code
+# which will check for all tables/fields existing as
+# Uiua functions (the intended use is in combination
+# with the `Database!` macro). Some characters get replaced,
+# since the Uiua formatter replaces them originally,
+# like `×` -> `*`
+Q! ← Query!(!^)
 
-  Concat ↚ $"_\n_"
+# executes a query and returns values
+# Track caller!
+# values ? sql db
+Values ← ReadValues⊸Prepare
 
-  # joined ? join statement-accumulator
-  JoinInternal ↚ (
-    °$"_ _ _"
-    ⊓JType◠$"⊢▽⊸∊ _~Fields _~Fields"
-    :⊙⟜₂$$ °□₂ ⍚⌟$"\_.\_" {"_" "_"} _
-    ˜Concat$$ "_" "_" "_" _
-           $$ $$ from \_
-           $$ $$ \_ \_
-           $$ $$ on \_ = \_
-  )
+# executes a query and returns values
+# as a map from column names to values
+# Track caller!
+# map ? sql db
+Map ← ReadMap⊸Prepare
 
-  # from ? table statement-accumulator
-  FromInternal ↚ (
-    ˜Concat$$ "from _"
-  )°$"⊡ _"
+# executes a query with parameters, returns values
+# Track caller!
+# values ? sql params db
+PValues ← ReadValues⟜⊸BindValues⊸𝄐⌟Prepare
 
-  # selection ? columns statement-accumulator
-  SelectInternal ↚ (
-    ˜Concat$$ Concat "select _"
-  )°$"⊏ _"
+# executes a query with parameters, returns values
+# as a map from column names to values
+# Track caller!
+# map ? sql params db
+PMap ← ReadMap⟜⊸BindValues⊸𝄐⌟Prepare
 
-  # filtered ? condition statement-accumulator
-  WhereInternal ↚ (
-    ˜Concat$$ ˜Concat "where _"
-  )°$"⊚ _"
-
-  # grouped ? criteria statement-accumulator
-  GroupInternal ↚ (
-    ˜Concat$$ ˜Concat "group by _"
-  )°$"⊕⊸_"
-
-  # filtered-grouped ? condition statement-accumulator
-  HavingInternal ↚ (
-    ˜Concat$$ ˜Concat "having _"
-  )°$"▽ _"
-
-  # sorted ? criteria statement-accumulator
-  OrderInternal ↚ (
-    ˜Concat$$ ˜Concat "order by _"
-  )°$"⍆ _"
-
-  # limited ? count statement-accumulator
-  LimitInternal ↚ (
-    ˜Concat$$ ˜Concat "limit _"
-  )°$"↙ _"
-
-  # insert ? table statement-accumulator
-  InsertInternal ↚ (
-    ˜Concat$$ "insert into _"
-  )°$"+ _"
-
-  # w/values ? tuples statement-accumulator
-  ValuesInternal ↚ (
-    ˜Concat$$ ˜Concat "values _"
-  )°$"⍚[_]"
-
-  # construct a query
-  ! ←^ ˜Concat"˜⊂@;" ∧◇⨬(
-    FromInternal
-  | JoinInternal
-  | JoinInternal
-  | JoinInternal
-  | JoinInternal
-  | JoinInternal
-  | SelectInternal
-  | WhereInternal
-  | GroupInternal
-  | HavingInternal
-  | OrderInternal
-  | LimitInternal
-  | InsertInternal
-  | ValuesInternal
-  )⊸≡◇(⊗⊓⊢"⊡⊂×⊢⊣⬚⊏⊚⊕▽⍆↙+⍚") ⊙"" ⍚San
-└─╴
-
-# executes a query directly and gets values
-Values! ←^ $"ReadValues Prepare Query~!(_)" /$"_|_"
-
-# formats given values, executes query and
-# returns its resulting values
-ValuesFmt! ←^ (
-  /$"_|_"
-  $$ Prepare Query~!(_)
-  $$ ReadValues BindValues⤚:
-)
-
-# executes a query directly and gets values as a map
-Map! ←^ $"ReadMap Prepare Query~!(_)" /$"_|_"
-
-# formats given values, executes query and
-# returns its resulting values as a map
-MapFmt! ←^ (
-  /$"_|_"
-  $$ Prepare Query~!(_)
-  $$ ReadMap BindValues⤚:
-)
-
-# executes a statement in one fell swoop
-Exec! ←^ $"Exec Query~!(_)" /$"_|_"
-
-# formats given values into statement and executes it
-ExecFmt! ←^ (
-  /$"_|_"
-  $$ Prepare Query~!(_)
-  $$ ◌⊃Finalize Step BindValues⤚:
-)
+# executes a query with parameters directly
+# Track caller!
+# ? sql params db
+PExec ← ExecStmt⟜⊸BindValues⊸𝄐⌟Prepare
 
 # returns all tables in the given database,
 # as name-code-pairs.
 # tables ? database
 Tables ← ⍜Connection(
-  ReadValues Prepare Query~!(
-    ⊡ sqlite_schema
-  | ⊏ name, sql
-  | ⊚ type = "table"
-  )
+  Values $ SELECT Name, SQL
+         $ FROM sqlite_schema
+         $ WHERE type = 'table';
 )
 
+# [TODO]: generated modules should have validators for data types
+# and support much more syntax
+
 # generates a module from a table and its fields
-# module-def ? {name repr}
-GenModule ↚ $"~_ _" ⊙(
+# module ? table
+GenModule ↚ $"~_ {_}" ⊙(
   ⊜□⊸≠@\n
   ⍚⍣(⊙◌°$"    [_]_")""
-  ▽±⊸≡◇⧻
-  $"[_]" /◇$"_ _"
+  /$"_ _" ▽±⊸≡◇⧻
 ) °□₂
+
+F ← (
+  ⍜⊜□⍚⋅@\s⊸∊"\s\n\t" # normalize spaces
+  °$"CREATE TABLE [_] ( _ )"
+)
 
 # generates modules with relevant fields
 # for all tables of a given database.
-Tables! ←^ ◇(/$"_\n_" ⍚GenModule Tables °$"\"_\"")⊢
+Database! ←^ /$"_\n_" ⍚GenModule Tables °$"\"_\"" °□₁

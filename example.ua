@@ -1,34 +1,32 @@
 # Experimental!
-Uiqlite ~ "lib" ~ C! Map! Tables! Values! ValuesFmt!
+U ~ "lib" ~ C! Database! Map PValues Q! Values
 
-Tables!"chinook"
+Database!"chinook"
 
 C!(
-  &s⊸Values!(
-    ⊂ Album Artist
-  | ⊏ Name → Artist, ⧻∘ → [Number of Albums]
-  | ⊚ True
-  | ⊕⊸Name
-  | ▽ ⧻∘ ≥ 3
-  | ⍆ Name ⍏, ⧻(Name) ⍖
-  | ↙ 10
+  &s⊸Values Q!(
+    SELECT Artist~Name AS "Artist" : COUNT(×) AS "Number of Albums"
+    FROM Album
+    JOIN Artist
+    ON Album~ArtistId = Artist~ArtistId
+    GROUP BY Artist~Name
+    HAVING COUNT(×) ≥ 3
+    ORDER BY COUNT(×) DESC : Artist~Name ASC
+    LIMIT 10
   )
 
-  &s⊸Values!(
-    ⊡ Album
-  | ⊏ Title
+  &s⊸Map Q!(
+    SELECT Customer~FirstName : Customer~LastName : SUM(Invoice~Total) AS "Sum"
+    FROM Customer
+    JOIN Invoice
+    ON Customer~CustomerId = Invoice~CustomerId
+    GROUP BY Customer~CustomerId
+    LIMIT 10
   )
 
-  &s⊸Map!(
-    ⊂ Customer Invoice
-  | ⊕⊸Customer~CustomerId
-  | ⊏ FirstName, LastName, /+(Total) → Sum
-  | ↙ 10
-  )
-
-  &s ValuesFmt!(
-    ⊡ Album
-  | ⊏ Title, ArtistId
-  | ⊚ ArtistId = $id
-  ) ⊙1
+  &s PValues Q!(
+    SELECT Album~Title
+    FROM Album
+    WHERE Album~ArtistId = $id
+  ) 2
 ) "chinook"
