@@ -56,7 +56,7 @@ Close ← FFI!(
 # Should be used like `⍜Connection F`.
 # Inside F, you have access to the database
 # pointer.
-Connection ← ⌅(Open|.Open|Close)
+Connection ← ⌅(Open|⟜∘Open|Close)
 
 # executes a function within a database connection.
 # the database pointer will be pushed to the stack.
@@ -66,7 +66,7 @@ C! ← ⍜Connection^0
 # Track caller!
 # ? sql db
 Exec ← FFI!(
-  □₅⊸⊓:∩₃NULL
+  □₅⊸⊓⤙⊙◌∩₃NULL
   Call Int "sqlite3_exec" {DB Str "void*" "void*" Str}
   Err!$"Failed to execute: _"
 )
@@ -75,9 +75,9 @@ Exec ← FFI!(
 # Track caller!
 # stmt ? str db
 Prepare ← FFI!(
-  □₅⊸⊓:(¯1 0 NULL)
+  □₅⊸⊓⤙⊙◌(¯1 0 NULL)
   Call Int "sqlite3_prepare_v2" {DB Str Int Out Stmt Str}
-  𝄐⌞Err!$"Failed to prepare statement: _" °□₂
+  ∪⌞∘Err!$"Failed to prepare statement: _" °□₂
 )
 
 # [SQLite3 Documentation](https://www.sqlite.org/c3ref/bind_blob.html)
@@ -120,7 +120,7 @@ BindText ← FFI!(
 # binds a value to the parameter with the given index
 # ? idx value stmt db
 BindValue ← (
-  ⨬(𝄐BindNull|BindInt|BindFloat|BindText|BindBlob)◡⋅InferType
+  ⨬(∪BindNull|BindInt|BindFloat|BindText|BindBlob)◡⋅InferType
 )
 
 # binds values to parameters equal to
@@ -128,18 +128,18 @@ BindValue ← (
 # would bind to parameter 1, 2 and 3, respectively.
 # Track caller!
 # ? stmt values db
-BindValues ← ⍚BindValue +₁°⊏ :
+BindValues ← ⍚BindValue +₁⤚⋅°⊏
 
 # [SQLite3 Documentation](https://www.sqlite.org/c3ref/bind_parameter_index.html")
 # idx ? name stmt
 GetParameterIndex ← FFI!(
-  Call Int "sqlite3_bind_parameter_index" {Stmt Str} □₂ ⤚:
+  Call Int "sqlite3_bind_parameter_index" {Stmt Str} ˜⊸□₂
   ˜⍤⤚⊓≠₀$"Invalid named parameter: '_'"
 )
 
 # binds a value to the parameter with the given name
 # ? name value stmt db
-BindNamed ← BindValue⊸𝄐⌟GetParameterIndex
+BindNamed ← BindValue⊸₂∪GetParameterIndex
 
 # binds values inside a map from parameter name to value
 # ? map stmt db
@@ -248,7 +248,7 @@ ReadMap ← map⊙⍉⊃Finalize⊃ColumnNames ReadInternal
   )
 
   RMap    ← °⊟⍉[{@. @;} {@~ @.} {@: @,} {@× @*} {@≤ "<="} {@≥ ">="}]
-  Replace ↚ ⍜⊜∘⊞⋅∘𝄐⌟⊸⦷
+  Replace ↚ ⍜⊜∘⊞⋅∘⊸⦷⊙⤙⊙◌
 
   ! ←^ ⊂"$ " ⊂⊙@; ⍥⋅@\s⊸=@\n ∧◇Replace RMap ⊓°□₁◌
 └╶╶
@@ -275,18 +275,18 @@ Map ← ReadMap⊸Prepare
 # executes a query with parameters, returns values
 # Track caller!
 # values ? sql params db
-PValues ← ReadValues⟜⊸BindValues⊸𝄐⌟Prepare
+PValues ← ReadValues⟜⊸BindValues⊸₂∪Prepare
 
 # executes a query with parameters, returns values
 # as a map from column names to values
 # Track caller!
 # map ? sql params db
-PMap ← ReadMap⟜⊸BindValues⊸𝄐⌟Prepare
+PMap ← ReadMap⟜⊸BindValues⊸₂∪Prepare
 
 # executes a query with parameters directly
 # Track caller!
 # ? sql params db
-PExec ← ExecStmt⟜⊸BindValues⊸𝄐⌟Prepare
+PExec ← ExecStmt⟜⊸BindValues⊸₂∪Prepare
 
 # returns all tables in the given database,
 # as name-code-pairs.
